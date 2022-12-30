@@ -85,8 +85,31 @@ def generate_image(url, payload):
         return image
 
 
-def generate_art_sheet(images, height):
-    width = len(images[0]) * 512
+def resize_all_images(images):
+    resized_images = []
+    scale_factor = None
+    comb_width = sum(i.size[0] for i in images[0])
+    if comb_width > 2000:
+        scale_factor = round(2000 / comb_width, 1)
+
+    if scale_factor is None:
+        return images
+
+    for row in images:
+        new_row = []
+        for img in row:
+            n_width = img.size[0] * scale_factor
+            n_height = img.size[1] * scale_factor
+            new_img = img.resize((n_width, n_height), Image.LANCZOS)
+            new_row.append(new_img)
+        resized_images.append(new_row)
+    return resized_images
+
+
+def generate_art_sheet(images):
+    images = resize_all_images(images)
+    height = sum(i.size[1] for i in images[0])
+    width = sum(i.size[0] for i in images[0])
     print(f"collage_width = {width}, {height}")
     collage = Image.new("RGBA", (width, height), color=(255,255,255,255))
     for img_row in range(len(images)):
@@ -122,5 +145,4 @@ def generate_single_art(payload):
 if __name__ == "__main__":
     promp_obj_list = read_csv(args.csvpath)
     images = generate_images(url, promp_obj_list, num_iterations=int(args.iter))
-    height = collage_height(promp_obj_list)
-    generate_art_sheet(images, height)
+    generate_art_sheet(images)
