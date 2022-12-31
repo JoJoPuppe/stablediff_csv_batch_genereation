@@ -77,9 +77,9 @@ def get_model_title(all_model_names):
     for model in all_model_names:
         if model['hash'] == hash:
             model_name = model["model_name"].replace(BASEMODEL_STRING, name)
-            for model in all_model_names:
-                if model_name == model["model_name"]:
-                    new_model = model["title"]
+            for m in all_model_names:
+                if model_name == m["model_name"]:
+                    new_model = m["title"]
                     return new_model
     return new_model
 
