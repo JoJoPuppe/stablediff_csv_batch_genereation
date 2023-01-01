@@ -1,3 +1,6 @@
+
+
+
 import json
 import requests
 import io
@@ -28,6 +31,7 @@ url = "http://127.0.0.1:7860"
 SEED_DIFFS = [2, -2, 81, 4, -9, 4816, -4771, 3123, 10233, -10222]
 BASEMODEL_STRING = "marcusloeper"
 BASE_OUT_PATH = pathlib.Path("./out")
+MAX_WIDTH = 800
 
 @dataclass
 class PromptObject:
@@ -118,11 +122,6 @@ def generate_images(url, promp_obj_list: List[PromptObject], folder, num_iterati
                 if new_model != current_model:
                     set_checkpoint_model(url, new_model)
                 prompt.prompt = prompt.prompt.replace(BASEMODEL_STRING, name)
-            if prompt.denoising_strength == '':
-                den_str = 0,
-            else:
-                den_str = float(prompt.denoising_strength)
-
             payload = {
                 "prompt": prompt.prompt,
                 "steps": int(prompt.steps),
@@ -132,9 +131,10 @@ def generate_images(url, promp_obj_list: List[PromptObject], folder, num_iterati
                 "width": int(prompt.width),
                 "height": int(prompt.height),
                 "sampler_index": prompt.sampler,
-                "denoising_strength": den_str,
                 "restore_faces": prompt.restore_faces
             }
+            if prompt.denoising_strength != '':
+                payload['denoising_strength'] = float(prompt.denoising_strength)
             start = timer()
 
             image_row.append(generate_image(url, payload, folder, idx, iter))
@@ -149,6 +149,7 @@ def generate_images(url, promp_obj_list: List[PromptObject], folder, num_iterati
 def generate_image(url, payload, folder, idx, iter):
     response = requests.post(url=f'{url}/sdapi/v1/txt2img', json=payload)
     r = response.json()
+    print(r)
     for i in r['images']:
         image = Image.open(io.BytesIO(base64.b64decode(i.split(",",1)[0])))
         save_image(url, image, i, folder, idx, iter)
@@ -156,7 +157,6 @@ def generate_image(url, payload, folder, idx, iter):
 
 
 def resize_all_images(images):
-    MAX_WIDTH = 800
     resized_images = []
     scale_factor = None
     comb_width = sum(i.size[0] for i in images[0])
@@ -176,25 +176,30 @@ def resize_all_images(images):
         resized_images.append(new_row)
     return resized_images
 
+def split_list(list_a, chunk_size):
+  for i in range(0, len(list_a), chunk_size):
+    yield list_a[i:i + chunk_size]
 
 def generate_art_sheet(images, folder):
-    height = sum(i[0].size[1] for i in images)
-    width = sum(i.size[0] for i in images[0])
-    print(f"collage_width = {width}, {height}")
-    collage = Image.new("RGBA", (width, height), color=(255,255,255,255))
-    y = 0
-    for img_row in range(len(images)):
-        if img_row == 0:
-            y = 0
-        else:
-            y += images[img_row - 1][0].size[1]
-        for img_idx in range(len(images[img_row])):
-            x = img_idx * images[img_row][img_idx].size[0]
-            collage.paste(images[img_row][img_idx], (x,y))
+    row_size = 4
+    all_collages = list(split_list(images, row_size))
+    for id, collage_image in enumerate(all_collages):
+        height = sum(i[0].size[1] for i in collage_image)
+        width = sum(i.size[0] for i in collage_image[0])
+        print(f"collage-{id+1}_width = {width}, {height}")
+        collage = Image.new("RGBA", (width, height), color=(255,255,255,255))
+        y = 0
+        for img_row in range(len(collage_image)):
+            if img_row == 0:
+                y = 0
+            else:
+                y += collage_image[img_row - 1][0].size[1]
+            for img_idx in range(len(collage_image[img_row])):
+                x = img_idx * collage_image[img_row][img_idx].size[0]
+                collage.paste(collage_image[img_row][img_idx], (x,y))
 
-    collage_out = pathlib.Path.joinpath(folder, "collage.png")
-    collage.show()
-    collage.save(collage_out)
+        collage_out = pathlib.Path.joinpath(folder, f"collage-{id+1}.png")
+        collage.save(collage_out)
 
 
 def save_image(url, image, i, folder, idx, iter):
