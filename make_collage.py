@@ -1,6 +1,3 @@
-
-
-
 import json
 import requests
 import io
@@ -33,6 +30,11 @@ BASEMODEL_STRING = "marcusloeper"
 BASE_OUT_PATH = pathlib.Path("./out")
 MAX_WIDTH = 800
 
+CLASS_TRAIN_IMAGE_PATH = pathlib.Path("/home/ubuntu/stable-web/portrait_of")
+INSTANCE_TRAIN_IMAGE_BASE_PATH = pathlib.Path("/home/ubuntu/stable-web/training_data")
+
+ASK_DB_TRAIN = False
+
 @dataclass
 class PromptObject:
     prompt: str
@@ -47,6 +49,43 @@ class PromptObject:
     model_hash: str
     restore_faces: str
     denoising_strength: str
+
+def create_DB_model(name, ckpt_file_path, scheduler='ddim'):
+    payload = {
+            "name": name,
+            "source": ckpt_file_path,
+            "scheduler": scheduler,
+            "model_url": "xxx",
+            "hub_token": "ddd"
+            }
+    print(f"creating new model: {name}")
+    response = requests.post(url=f'{url}/dreambooth/createModel', json=payload)
+
+def train_DB_model(name, pretrained_model_name):
+    train_path = pathlib.Path.joinpath(INSTANCE_TRAIN_IMAGE_BASE_PATH, f"train_{name}")
+    if not train_path.exists:
+        raise Exception(f"no training data found. please put training data in '/training_data/train_{name}'")
+
+    number_of_training_images = len(list(train_path.iterdir()))
+
+    pathlib.Path("")
+    payload = {
+        "db_pretrained_model_name_or_path": pretrained_model_name,
+        "db_instance_data_dir": train_path,
+        "db_class_data_dir": CLASS_TRAIN_IMAGE_PATH,
+        "db_instance_prompt": f"a portrait of {name} person",
+        "db_class_prompt": "a portrait of a person",
+        "db_train_batch_size": 1,
+        "db_sample_batch_size": 1,
+        "db_num_train_epochs": 1,
+        "db_save_preview_every": 5000,
+        "db_save_embedding_every": 5000,
+        "db_max_train_steps": number_of_training_images * 100,
+        "db_use_8bit_adam": True,
+        "db_mixed_precision": "fp16",
+            }
+    print("training new model ...")
+    response = requests.post(url=f'{url}/dreambooth/start_straining', json=payload)
 
 
 def read_csv(csv_path, style_cnt):
@@ -76,32 +115,33 @@ def get_all_model_names(url):
     # data = response.json()
     return response.json()
 
-def get_model_title(all_model_names, hash):
+def get_model_title(all_model_names, hash, name):
     new_model = None
     for model in all_model_names:
         if model['hash'] == hash:
-            print(f"found hash: {hash}")
             model_name = model["model_name"].replace(BASEMODEL_STRING, name)
             for m in all_model_names:
                 if model_name == m["model_name"]:
                     new_model = m["title"]
-                    print(f"new model: {new_model}")
-                    return new_model
-    return new_model
+                    return (new_model, model_name)
+    return (new_model, '')
 
 def get_model_string(url, name, hash):
     all_model_names = get_all_model_names(url)
     all_titles = [i['title'] for i in all_model_names]
-    new_model = get_model_title(all_model_names, hash)
+    new_model, model_name = get_model_title(all_model_names, hash, name)
     if new_model is not None and new_model in all_titles:
         return new_model
-    elif new_model is not None:
-        for t in all_titles:
-            if t.find(name) != -1:
-                print(f'model not found using: {t}')
-                return t
     else:
-        raise Exception("no model with {name} found. please train dreambooth!")
+        if not ASK_DB_TRAIN:
+            if len(model_name) > 0:
+                ckpt = model_name[len(name):]
+                create_DB_model(model_name, ckpt)
+                train_DB_model(name, model_name)
+        else:
+            raise Exception(f"train Dreambooth model on {model_name[len(name):]}")
+
+
 
 def generate_images(url, promp_obj_list: List[PromptObject], folder, num_iterations=5, name=None):
     start_all = timer()
@@ -149,7 +189,6 @@ def generate_images(url, promp_obj_list: List[PromptObject], folder, num_iterati
 def generate_image(url, payload, folder, idx, iter):
     response = requests.post(url=f'{url}/sdapi/v1/txt2img', json=payload)
     r = response.json()
-    print(r)
     for i in r['images']:
         image = Image.open(io.BytesIO(base64.b64decode(i.split(",",1)[0])))
         save_image(url, image, i, folder, idx, iter)
