@@ -72,21 +72,23 @@ def get_all_model_names(url):
     # data = response.json()
     return response.json()
 
-def get_model_title(all_model_names):
+def get_model_title(all_model_names, hash):
     new_model = None
     for model in all_model_names:
         if model['hash'] == hash:
+            print(f"found hash: {hash}")
             model_name = model["model_name"].replace(BASEMODEL_STRING, name)
             for m in all_model_names:
                 if model_name == m["model_name"]:
                     new_model = m["title"]
+                    print(f"new model: {new_model}")
                     return new_model
     return new_model
 
 def get_model_string(url, name, hash):
     all_model_names = get_all_model_names(url)
     all_titles = [i['title'] for i in all_model_names]
-    new_model = get_model_title(all_model_names)
+    new_model = get_model_title(all_model_names, hash)
     if new_model is not None and new_model in all_titles:
         return new_model
     elif new_model is not None:
